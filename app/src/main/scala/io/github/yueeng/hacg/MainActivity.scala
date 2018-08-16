@@ -4,8 +4,8 @@ import java.util.concurrent.Future
 
 import android.animation.ObjectAnimator
 import android.app.SearchManager
-import android.content._
-import android.graphics.Point
+import android.content.{Context, _}
+import android.graphics.{PixelFormat, Point}
 import android.net.Uri
 import android.os.{Bundle, Parcelable}
 import android.provider.SearchRecentSuggestions
@@ -18,9 +18,12 @@ import android.support.v7.app.AlertDialog.Builder
 import android.support.v7.app.AppCompatActivity
 import android.support.v7.widget.{RecyclerView, SearchView, StaggeredGridLayoutManager}
 import android.text.method.LinkMovementMethod
-import android.view._
+import android.util.Log
+import android.view.ViewGroup.LayoutParams
 import android.view.animation.DecelerateInterpolator
-import android.widget._
+import android.view.{Menu, View, WindowManager, _}
+import android.widget.CompoundButton.OnCheckedChangeListener
+import android.widget.{TextView, _}
 import com.squareup.picasso.Picasso
 import io.github.yueeng.hacg.Common._
 import io.github.yueeng.hacg.ViewBinder.{ErrorBinder, ViewBinder}
@@ -30,43 +33,80 @@ import scala.collection.mutable.ListBuffer
 import scala.ref.WeakReference
 
 class MainActivity extends AppCompatActivity {
+
   lazy val pager: ViewPager = findViewById(R.id.container)
+  var mWindowManager:WindowManager = null
+  var tv:TextView = null
+  var lp:(WindowManager.LayoutParams) = null
 
   protected override def onCreate(state: Bundle) {
     super.onCreate(state)
+    /*
+    * 设置布局
+    * */
     setContentView(R.layout.activity_main)
+    Log.e("MainActivity","onCreate");
+
+    mWindowManager = getSystemService(Context.WINDOW_SERVICE).asInstanceOf[WindowManager]
+    lp = new WindowManager.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.TYPE_APPLICATION,
+      WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT)
+    lp.gravity = Gravity.BOTTOM // 可以自定义显示的位置
+    lp.y = 10 // 距离底部的距离是10像素 如果是 top 就是距离top是10像素
+    tv = new TextView(MainActivity.this)
+    tv.setBackgroundColor(0x99000000)
+
     setSupportActionBar(findViewById(R.id.toolbar))
     getSupportActionBar.setLogo(R.mipmap.ic_launcher)
+    /*TabLayout:横向滑动布局*/
     val tabs: TabLayout = findViewById(R.id.tab)
+    /*
+    * 横向滑动内容
+    * ViewPager 如其名所述，是负责翻页的一个 View。
+    * 准确说是一个 ViewGroup，包含多个 View 页，在手指横向滑动屏幕时，其负责对 View 进行切换。
+    * 为了生成这些 View 页，需要提供一个 PagerAdapter 来进行和数据绑定以及生成最终的 View 页
+    * （摘自:https://www.cnblogs.com/lianghui66/p/3607091.html）
+    * */
     pager.setAdapter(new ArticleFragmentAdapter(getSupportFragmentManager))
     tabs.setupWithViewPager(pager)
 
     if (state == null) {
       checkVersion()
     }
+
+    new Thread(new SearchSite()).start()
+
   }
 
+  /*
+  * 若连续两次点击返回，则退出程序
+  * */
   private var last = 0L
-
   override def onBackPressed(): Unit = {
     if (System.currentTimeMillis() - last > 1500) {
       last = System.currentTimeMillis()
       toast(R.string.app_exit_confirm)
       return
     }
+    if (NightMode.isNight)
+      mWindowManager.removeViewImmediate(tv);
+    mWindowManager = null;
+    tv = null;
     finish()
     //    Snackbar.make(findViewById(R.id.coordinator), R.string.app_exit_confirm, Snackbar.LENGTH_SHORT)
     //      .setAction(R.string.app_exit, viewClick { _ => ActivityCompat.finishAfterTransition(MainActivity.this) })
     //      .show()
   }
 
+  /*
+  * check new version
+  * */
   def checkVersion(toast: Boolean = false): Future[Unit] = {
     async(this) { c =>
       val result = s"${HAcg.RELEASE}/latest".httpGet.jsoup { dom =>
         (
           dom.select(".css-truncate-target").text(),
-          dom.select(".markdown-body").text().trim,
-          dom.select(".release-downloads a[href$=.apk]").headOption match {
+          dom.select(".markdown-body").html().trim,
+          dom.select(".release a[href$=.apk]").headOption match {
             case Some(a) => a.attr("abs:href")
             case _ => null
           }
@@ -80,7 +120,7 @@ class MainActivity extends AppCompatActivity {
           case Some((v: String, t: String, u: String)) =>
             new Builder(MainActivity.this)
               .setTitle(getString(R.string.app_update_new, Common.version(MainActivity.this), v))
-              .setMessage(t)
+              .setMessage(t.html)
               .setPositiveButton(R.string.app_update, dialogClick { (_, _) => openWeb(MainActivity.this, u) })
               .setNeutralButton(R.string.app_publish, dialogClick { (_, _) => openWeb(MainActivity.this, HAcg.RELEASE) })
               .setNegativeButton(R.string.app_cancel, null)
@@ -98,16 +138,34 @@ class MainActivity extends AppCompatActivity {
     pager.setAdapter(new ArticleFragmentAdapter(getSupportFragmentManager))
   }
 
+  /*
+  * FragmentPagerAdapter 继承自 PagerAdapter。
+  * 相比通用的 PagerAdapter，该类更专注于每一页均为 Fragment 的情况。
+  * 该类内的每一个生成的 Fragment 都将保存在内存之中，因此适用于那些相对静态的页，数量也比较少的那种；
+  * 如果需要处理有很多页，并且数据动态性较大、占用内存较多的情况，应该使用FragmentStatePagerAdapter。
+  *
+  * 该 PagerAdapter 的实现将只保留当前页面，当页面离开视线后，就会被消除，释放其资源；而在页面需要显示时，生成新的页面
+  *
+  * （摘自:https://www.cnblogs.com/lianghui66/p/3607091.html）
+  * */
   class ArticleFragmentAdapter(fm: FragmentManager) extends FragmentStatePagerAdapter(fm) {
     private val data = ListBuffer(HAcg.category: _*)
 
-    override def getItem(position: Int): Fragment =
-      new ArticleFragment().arguments(new Bundle().string("url", data(position)._1))
+    override def getItem(position: Int): Fragment = {
+      Log.e("ArticleFragmentAdapter url",""+data(position)._1);
+      return new ArticleFragment().arguments(new Bundle().string("url", data(position)._1))
+    }
+
 
     override def getCount: Int = data.size
 
     override def getPageTitle(position: Int): CharSequence = data(position)._2
 
+    /*
+    * 有的建议不用 FragmentPagerAdapter，而改用 FragmentStatePagerAdapter，
+    * 并且重载 getItemPosition() 并返回 POSITION_NONE，以触发销毁对象以及重建对象。
+    * 从上面的分析中看，后者给出的建议确实可以达到调用 notifyDataSetChanged() 后，Fragment 被以新的参数重新建立的效果
+    * */
     override def getItemPosition(`object`: scala.Any): Int = PagerAdapter.POSITION_NONE
 
     var current: WeakReference[Fragment] = _
@@ -118,26 +176,45 @@ class MainActivity extends AppCompatActivity {
     }
   }
 
+  /*
+  * 上方菜单栏搜索功能
+  * */
   override def onCreateOptionsMenu(menu: Menu): Boolean = {
     getMenuInflater.inflate(R.menu.menu_main, menu)
     val search = menu.findItem(R.id.search).getActionView.asInstanceOf[SearchView]
     val manager = getSystemService(Context.SEARCH_SERVICE).asInstanceOf[SearchManager]
     val info = manager.getSearchableInfo(new ComponentName(this, classOf[ListActivity]))
     search.setSearchableInfo(info)
+
+    val night:Switch = menu.findItem(R.id.switchNightView).getActionView.findViewById(R.id.switchNight)
+    night.setOnCheckedChangeListener(new OnCheckedChangeListener {
+      override def onCheckedChanged(buttonView: CompoundButton, isChecked: Boolean): Unit = {
+        NightMode.isNight = isChecked
+        if (isChecked)
+          mWindowManager.addView(MainActivity.this.tv, MainActivity.this.lp)
+        else
+          mWindowManager.removeViewImmediate(MainActivity.this.tv)
+      }
+    })
     super.onCreateOptionsMenu(menu)
   }
 
+  /*
+  * 点击菜单栏后对应的操作
+  * */
   override def onOptionsItemSelected(item: MenuItem): Boolean = {
     item.getItemId match {
+        //search
       case R.id.search_clear =>
         val suggestions = new SearchRecentSuggestions(this, SearchHistoryProvider.AUTHORITY, SearchHistoryProvider.MODE)
         suggestions.clearHistory()
         true
-      case R.id.config => HAcg.update(this)(() => reload())
-        true
-      case R.id.settings => HAcg.setHost(this, _ => reload())
-        true
+      case R.id.config => HAcg.update(this)(() => reload());true
+      case R.id.config_fade => HAcg.update_fade(this)(() => reload());true
+      case R.id.settings => HAcg.setHost(this, _ => reload());true
       case R.id.philosophy => startActivity(new Intent(this, classOf[WebActivity])); true
+      case R.id.searchSite => clipboard(null,SearchSite.getUrl(SearchSite.SEARCH_BAIDU));true
+      case R.id.searchLiulishe => clipboard(null,SearchSite.getUrl(SearchSite.SEARCH_LIULISHE));true
       case R.id.about =>
         new Builder(this)
           .setTitle(s"${getString(R.string.app_name)} ${Common.version(this)}")
@@ -155,6 +232,7 @@ class MainActivity extends AppCompatActivity {
   }
 }
 
+//搜索界面
 class ListActivity extends BaseSlideCloseActivity {
 
   override def onCreate(savedInstanceState: Bundle): Unit = {
@@ -170,6 +248,7 @@ class ListActivity extends BaseSlideCloseActivity {
         val key = i.getStringExtra(SearchManager.QUERY)
         val suggestions = new SearchRecentSuggestions(this, SearchHistoryProvider.AUTHORITY, SearchHistoryProvider.MODE)
         suggestions.saveRecentQuery(key, null)
+        //进行搜索查询
         ( s"""${HAcg.wordpress}/?s=${Uri.encode(key)}&submit=%E6%90%9C%E7%B4%A2""", key)
       case _ => null
     }
@@ -177,6 +256,7 @@ class ListActivity extends BaseSlideCloseActivity {
       finish()
       return
     }
+    Log.e("MainActivity URL SEARCH",url);
     setTitle(name)
     val transaction = getSupportFragmentManager.beginTransaction()
 
@@ -198,15 +278,25 @@ class ListActivity extends BaseSlideCloseActivity {
   }
 }
 
+/*
+* SearchRecentsuggestionsProvider这个超类能够被用来创建一个简单的搜索建议提供器，它创建基于最近的搜索或最近的view。
+* 实现和测试查询搜索，SearchManager。
+* 创建一个内容提供器在你的应用程序通过扩展SearchRecentSugestionsprovider
+* */
 class SearchHistoryProvider extends SearchRecentSuggestionsProvider() {
   setupSuggestions(SearchHistoryProvider.AUTHORITY, SearchHistoryProvider.MODE)
 }
 
+/*搜索历史*/
 object SearchHistoryProvider {
   val AUTHORITY = s"${getClass.getPackage.getName}.SuggestionProvider"
   val MODE: Int = SearchRecentSuggestionsProvider.DATABASE_MODE_QUERIES
 }
 
+/*
+* 左右滑动加载的Fragment
+* 或是用来显示搜索结果
+* */
 class ArticleFragment extends Fragment {
   var busy = new ViewBinder[Boolean, SwipeRefreshLayout](false)((view, value) => view.post(() => view.setRefreshing(value)))
   lazy val adapter = new ArticleAdapter()
@@ -218,7 +308,10 @@ class ArticleFragment extends Fragment {
   override def onCreate(saved: Bundle): Unit = {
     super.onCreate(saved)
     setRetainInstance(true)
-
+    /*
+    * 若已经加载过，则不必重新加载
+    * （除非下拉刷新）
+    * */
     if (saved != null) {
       val data = saved.getParcelableArray("data")
       if (data != null && data.nonEmpty) {
@@ -227,19 +320,29 @@ class ArticleFragment extends Fragment {
       }
       error <= saved.getBoolean("error", false)
     }
+    Log.e("MainActivity ArticleFragment new",defurl);
     query(defurl)
   }
 
+  /*
+  * 获取该窗口的URL以便加载文章列表
+  * */
   def defurl: String = getArguments.getString("url") match {
-    case uri if uri.startsWith("/") => s"${HAcg.wordpress}$uri"
+    case uri if uri.startsWith("/") => s"${HAcg.web}$uri"
     case uri => uri
   }
 
+  /*
+  * 离开时保存该窗口内容
+  * */
   override def onSaveInstanceState(out: Bundle): Unit = {
     out.putParcelableArray("data", adapter.data.toArray)
     out.putBoolean("error", error())
   }
 
+  /*
+  * 刷新重新加载
+  * */
   def reload(): Unit = {
     adapter.clear()
     query(defurl)
@@ -265,6 +368,9 @@ class ArticleFragment extends Fragment {
     root
   }
 
+  /*
+  * 搜索网站页面
+  * */
   def query(uri: String, retry: Boolean = false): Unit = {
     if (busy() || uri.isNullOrEmpty) return
     busy <= true
@@ -285,6 +391,9 @@ class ArticleFragment extends Fragment {
         result match {
           case Some(r) =>
             url = r._2
+            /*
+            * 根据URL是否为空和实际内容是否加载进行相应的显示
+            * */
             adapter.data --= adapter.data.filter(_.link.isNullOrEmpty)
             adapter ++= r._1
             val msg = (adapter.data.isEmpty, url.isNullOrEmpty) match {
@@ -302,18 +411,23 @@ class ArticleFragment extends Fragment {
     }
   }
 
+  /*
+  * 点击目标后进入该文章
+  * 加载文章详情
+  * */
   private val click = viewClick {
     _.getTag match {
       case h: ArticleHolder =>
-        startActivity(new Intent(getActivity, classOf[InfoActivity]).putExtra("article", h.article.asInstanceOf[Parcelable]))
-      //        ActivityCompat.startActivityForResult(getActivity,
-      //          new Intent(getActivity, classOf[InfoActivity]).putExtra("article", h.article.asInstanceOf[Parcelable]),
-      //          0,
-      //          ActivityOptionsCompat.makeSceneTransitionAnimation(getActivity, (h.image1, "image")).toBundle)
+        startActivity(new Intent(getActivity, classOf[InfoActivity])
+          .putExtra("article", h.article.asInstanceOf[Parcelable]))
       case _ =>
     }
   }
 
+  /*
+  * holder
+  * 得到每篇文章的概要所需的组件
+  * */
   class ArticleHolder(val view: View) extends RecyclerView.ViewHolder(view) {
     view.setOnClickListener(click)
     val context: Context = view.getContext
@@ -335,9 +449,14 @@ class ArticleFragment extends Fragment {
     val Msg = Value
   }
 
+  /*
+  * 每篇文章的概要
+  * 信息存储体
+  * */
   class ArticleAdapter extends DataAdapter[Article, RecyclerView.ViewHolder] {
     override def onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int): Unit = {
       holder match {
+          //加载文章，获取文章信息
         case holder: ArticleHolder =>
           val item = data(position)
           holder.article = item
@@ -352,9 +471,11 @@ class ArticleFragment extends Fragment {
           holder.text3.setVisibility(if (item.tags.nonEmpty) View.VISIBLE else View.GONE)
 
           Picasso.`with`(holder.context).load(item.img).placeholder(R.drawable.loading).error(R.drawable.placeholder).into(holder.image1)
+          //单纯的信息
         case holder: MsgHolder =>
           holder.text1.setText(data(position).title)
       }
+      //界面之外的处理？
       if (position > last) {
         last = position
         val anim = ObjectAnimator.ofFloat(holder.itemView, "translationY", from, 0)

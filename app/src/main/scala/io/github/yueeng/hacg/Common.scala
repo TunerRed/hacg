@@ -23,11 +23,11 @@ import android.support.v7.app.AlertDialog.Builder
 import android.support.v7.app.{AlertDialog, AppCompatActivity}
 import android.support.v7.widget.{GridLayoutManager, LinearLayoutManager, RecyclerView, StaggeredGridLayoutManager}
 import android.text.style.{ClickableSpan, ReplacementSpan}
-import android.text.{InputType, SpannableStringBuilder, Spanned, TextPaint}
-import android.util.AttributeSet
+import android.text.{Html, InputType, SpannableStringBuilder, Spanned, TextPaint}
+import android.util.{AttributeSet, DisplayMetrics}
 import android.view.View.OnLongClickListener
 import android.view._
-import android.widget.{EditText, Toast}
+import android.widget.{EditText, FrameLayout, Toast}
 import io.github.yueeng.hacg.Common._
 import okhttp3.{MultipartBody, OkHttpClient, Request}
 import okio.Okio
@@ -42,6 +42,7 @@ import scala.io.Source
 import scala.language.{implicitConversions, postfixOps, reflectiveCalls}
 import scala.ref.WeakReference
 import scala.util.Random
+import scala.util.matching.Regex
 
 object HAcg {
   private val SYSTEM_HOST: String = "system.host"
@@ -76,7 +77,18 @@ object HAcg {
     case _: Exception => "/wp/bbs"
   }
 
-  private val config = PreferenceManager.getDefaultSharedPreferences(HAcgApplication.instance)
+  private val config = PreferenceManager.getDefaultSharedPreferences(HAcgApplication.instance).also { c =>
+    val AVC = "app.version.code"
+    if (c.getInt(AVC, 0) < BuildConfig.VERSION_CODE) {
+      c.edit()
+        .remove(SYSTEM_HOST)
+        .remove(SYSTEM_HOSTS)
+        .remove(SYSTEM_BBS)
+        .remove(SYSTEM_CATEGORY)
+        .putInt(AVC, BuildConfig.VERSION_CODE)
+        .apply()
+    }
+  }
 
   private def _hosts: Seq[String] = try config.getString(SYSTEM_HOSTS, null).let {
     s => new JSONArray(s).let { a => (0 until a.length()).map(k => a.getString(k)) }
@@ -128,6 +140,9 @@ object HAcg {
   if (_bbs.isNullOrEmpty) bbs = default_bbs()
 
   def update(context: Context)(f: (() => Unit) = null): Unit = {
+    /*
+    * 目录的配置文件时写在远程服务器上的
+    * */
     //https://raw.githubusercontent.com/yueeng/hacg/master/app/src/main/assets/config.json
     "https://raw.githubusercontent.com/yueeng/hacg/master/app/src/main/assets/config.json".httpGetAsync(context) {
       case Some((json, _)) => try {
@@ -135,6 +150,7 @@ object HAcg {
         host = default_hosts(Option(config)).head
         hosts = default_hosts(Option(config))
         category = default_category(Option(config))
+
         bbs = default_bbs(Option(config))
         if (f != null) f()
       } catch {
@@ -142,32 +158,57 @@ object HAcg {
       }
       case _ =>
     }
+    //Log.e("Common category",category(1)._1);
   }
 
+  def update_fade(context: Context)(f: (() => Unit) = null): Unit = {
+    /*
+    * 可以直接在目标json后添加raw=true选项即可获得水灵灵的json数据
+    * 在正版和盗版网址之间切换配置
+    * */
+    "https://github.com/TunerRed/hacg/blob/master/app/src/main/assets/config.json?raw=true".httpGetAsync(context) {
+      case Some((json, _)) => try {
+        val config = new JSONObject(json)
+        host = default_hosts(Option(config)).head
+        hosts = default_hosts(Option(config))
+        category = default_category(Option(config))
+
+        bbs = default_bbs(Option(config))
+        if (f != null) f()
+      } catch {
+        case _: Exception =>
+      }
+      case _ =>
+    }
+    //Log.e("Common category",category(1)._1);
+  }
+
+  val IsHttp: Regex = """^https?://.*$""".r
   val RELEASE = "https://github.com/yueeng/hacg/releases"
 
-  def web = s"http://$host"
+  def web = s"https://$host"
 
   def domain: String = host.indexOf('/') match {
     case i if i >= 0 => host.substring(0, i)
     case _ => host
   }
 
-  def wordpress: String = web
+  def wordpress: String = s"$web/wp"
 
-  def philosophy = s"$wordpress$bbs"
+  def philosophy: String = bbs match {
+    case IsHttp() => bbs
+    case _ => s"$web$bbs"
+  }
 
-  def setHosts(context: Context, title: Int, hint: Int, hostlist: () => Seq[String], cur: () => String, set: String => Unit, ok: String => Unit, reset: () => Unit): Unit = {
-    val edit = new EditText(context)
-    if (hint != 0) {
-      edit.setHint(hint)
-    }
+  def setHosts(context: Context, title: Int, hostlist: () => Seq[String], cur: () => String, set: String => Unit, ok: String => Unit, reset: () => Unit): Unit = {
+    val view = LayoutInflater.from(context).inflate(R.layout.alert_host, null, false)
+    val edit = view.findViewById[EditText](R.id.edit1)
     edit.setInputType(InputType.TYPE_TEXT_VARIATION_URI)
     new Builder(context)
       .setTitle(title)
-      .setView(edit)
+      .setView(view)
       .setNegativeButton(R.string.app_cancel, null)
-      .setOnDismissListener(dialogDismiss { _ => setHostx(context, title, hint, hostlist, cur, set, ok, reset) })
+      .setOnDismissListener(dialogDismiss { _ => setHostx(context, title, hostlist, cur, set, ok, reset) })
       .setNeutralButton(R.string.settings_host_reset,
         dialogClick { (_, _) => reset() })
       .setPositiveButton(R.string.app_ok,
@@ -175,20 +216,18 @@ object HAcg {
           val host = edit.getText.toString
           if (host.isNonEmpty) {
             ok(host)
-          } else {
-            Toast.makeText(context, hint, Toast.LENGTH_SHORT).show()
           }
         })
       .create().show()
   }
 
-  def setHostx(context: Context, title: Int, hint: Int, hostlist: () => Seq[String], cur: () => String, set: String => Unit, ok: String => Unit, reset: () => Unit): Unit = {
+  def setHostx(context: Context, title: Int, hostlist: () => Seq[String], cur: () => String, set: String => Unit, ok: String => Unit, reset: () => Unit): Unit = {
     val hosts = hostlist().toList
     new Builder(context)
       .setTitle(title)
       .setSingleChoiceItems(hosts.map(_.asInstanceOf[CharSequence]).toArray, hosts.indexOf(cur()) match { case -1 => 0 case x => x }, null)
       .setNegativeButton(R.string.app_cancel, null)
-      .setNeutralButton(R.string.settings_host_more, dialogClick { (_, _) => setHosts(context, title, hint, hostlist, cur, set, ok, reset) })
+      .setNeutralButton(R.string.settings_host_more, dialogClick { (_, _) => setHosts(context, title, hostlist, cur, set, ok, reset) })
       .setPositiveButton(R.string.app_ok, dialogClick { (d, _) => set(hosts(d.asInstanceOf[AlertDialog].getListView.getCheckedItemPosition).toString) })
       .create().show()
   }
@@ -196,7 +235,6 @@ object HAcg {
   def setHost(context: Context, ok: String => Unit = null): Unit = {
     setHostx(context,
       R.string.settings_host,
-      R.string.settings_host_sample,
       () => HAcg.hosts,
       () => HAcg.host,
       host => {
@@ -225,7 +263,7 @@ class HAcgApplication extends MultiDexApplication {
 }
 
 object Common {
-  implicit def viewTo[T <: View](view: View): T = view.asInstanceOf[T]
+  //  implicit def viewTo[T <: View](view: View): T = view.asInstanceOf[T]
 
   implicit def viewClick(func: View => Unit): View.OnClickListener = new View.OnClickListener {
     override def onClick(view: View): Unit = func(view)
@@ -264,6 +302,12 @@ object Common {
     def isNullOrEmpty: Boolean = s == null || s.isEmpty
 
     def isNonEmpty: Boolean = !isNullOrEmpty
+
+    //noinspection ScalaDeprecation
+    def html: Spanned = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+      Html.fromHtml(s, Html.FROM_HTML_MODE_COMPACT)
+    else
+      Html.fromHtml(s)
   }
 
   private val datefmt = new SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ssZZZZZ")
@@ -465,7 +509,7 @@ object Common {
     }
 
     def httpDownload(file: String = null): Option[File] = try {
-      System.out.println(url)
+//      System.out.println(url)
       val http = new OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .build()
@@ -768,7 +812,7 @@ object SpanUtil {
     }
 
     override def draw(canvas: Canvas, text: CharSequence, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {
-      System.out.println("$start, $end, $x, $top, $y, $bottom, ${paint.fontMetrics.top}, ${paint.fontMetrics.bottom}, ${paint.fontMetrics.leading}, ${paint.fontMetrics.ascent}, ${paint.fontMetrics.descent}, ${paint.fontMetrics.descent - paint.fontMetrics.ascent}")
+//      System.out.println("$start, $end, $x, $top, $y, $bottom, ${paint.fontMetrics.top}, ${paint.fontMetrics.bottom}, ${paint.fontMetrics.leading}, ${paint.fontMetrics.ascent}, ${paint.fontMetrics.descent}, ${paint.fontMetrics.descent - paint.fontMetrics.ascent}")
       val rect = new RectF(x, y + paint.getFontMetrics.top - linePadding,
         x + getSize(paint, text, start, end, paint.getFontMetricsInt()),
         y + paint.getFontMetrics.bottom + linePadding)
@@ -840,6 +884,9 @@ class PagerSlidingPaneLayout(context: Context, attrs: AttributeSet, defStyle: In
   }
 }
 
+/*
+* 侧滑关闭该Activity
+* */
 class BaseSlideCloseActivity extends AppCompatActivity() with SlidingPaneLayout.PanelSlideListener {
 
   override def onCreate(state: Bundle) {
@@ -861,18 +908,22 @@ class BaseSlideCloseActivity extends AppCompatActivity() with SlidingPaneLayout.
     }
 
     swipe.setPanelSlideListener(this)
-    swipe.setSliderFadeColor(ContextCompat.getColor(this, android.R.color.transparent))
+    swipe.setSliderFadeColor(ContextCompat.getColor(this, R.color.text_color_summary))
 
     // 左侧的透明视图
     val leftView = new View(this)
     leftView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     swipe.addView(leftView, 0)
-
+    swipe.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).also { lp =>
+      lp.bottomMargin = getSoftButtonsBarHeight
+    })
     val decorView = getWindow.getDecorView.asInstanceOf[ViewGroup]
 
-
-    // 右侧的内容视图
+    // 右侧的评论视图
     val decorChild = decorView.getChildAt(0).asInstanceOf[ViewGroup]
+    getTheme.obtainStyledAttributes(Array[Int](android.R.attr.colorBackground)).also { ta =>
+      decorChild.setBackgroundColor(ta.getColor(0, 0))
+    }.recycle()
     decorChild.setBackgroundColor(ContextCompat.getColor(this, R.color.background))
     decorView.removeView(decorChild)
     decorView.addView(swipe)
@@ -880,6 +931,18 @@ class BaseSlideCloseActivity extends AppCompatActivity() with SlidingPaneLayout.
     // 为 SlidingPaneLayout 添加内容视图
     swipe.addView(decorChild, 1)
   }
+
+  private def getSoftButtonsBarHeight: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+    val metrics = new DisplayMetrics()
+    getWindowManager.getDefaultDisplay.getMetrics(metrics)
+    val usableHeight = metrics.heightPixels
+    getWindowManager.getDefaultDisplay.getRealMetrics(metrics)
+    val realHeight = metrics.heightPixels
+    if (realHeight > usableHeight)
+      realHeight - usableHeight
+    else
+      0
+  } else 0
 
   override def onPanelSlide(panel: View, slideOffset: Float) {
 

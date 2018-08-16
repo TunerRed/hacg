@@ -2,15 +2,15 @@ apply plugin: 'com.android.application'
 apply plugin: "jp.leafytree.android-scala"
 
 android {
-    compileSdkVersion 26
-    buildToolsVersion "26.0.3"
+    compileSdkVersion 27
+    buildToolsVersion "27.0.3"
 
     defaultConfig {
         applicationId "io.github.yueeng.hacg"
         minSdkVersion 14
-        targetSdkVersion 26
-        versionCode 22
-        versionName "1.2.1"
+        targetSdkVersion 27
+        versionCode 26
+        versionName "1.2.6"
         multiDexEnabled true
         testInstrumentationRunner "com.android.test.runner.MultiDexTestRunner"
     }
@@ -29,24 +29,27 @@ android {
         javaMaxHeapSize "2g"
     }
     compileOptions {
-        sourceCompatibility 1.7
-        targetCompatibility 1.7
+        sourceCompatibility 1.8
+        targetCompatibility 1.8
     }
 }
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
-    compile "com.android.support:multidex:1.0.2"
+    compile "com.android.support:multidex:1.0.3"
     compile "com.android.support:design:$android_support_version"
     compile "com.android.support:appcompat-v7:$android_support_version"
     compile "com.android.support:cardview-v7:$android_support_version"
     compile "com.android.support:recyclerview-v7:$android_support_version"
     compile 'com.github.clans:fab:1.6.4'
-    compile "org.scala-lang:scala-library:2.11.11"
-    compile "com.squareup.okhttp3:okhttp:3.9.0"
-    compile "com.squareup.picasso:picasso:2.5.2"
-    compile 'org.jsoup:jsoup:1.10.3'
+    compile 'org.scala-lang:scala-library:2.11.11'
+    compile 'com.squareup.okhttp3:okhttp:3.10.0'
+    compile 'com.squareup.picasso:picasso:2.5.2'
+    compile 'org.jsoup:jsoup:1.11.2'
     androidTestCompile "com.android.support:multidex-instrumentation:1.0.2", { exclude module: "multidex" }
+    // https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter-api
+    testCompile group: 'org.junit.jupiter', name: 'junit-jupiter-api', version: '5.2.0'
+    compile 'junit:junit:4.12'
 }
 
 tasks.withType(ScalaCompile) {

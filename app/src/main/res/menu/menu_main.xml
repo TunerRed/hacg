@@ -1,31 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+<menu xmlns:tools="http://schemas.android.com/tools" xmlns:android="http://schemas.android.com/apk/res/android"
+      xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:id="@+id/search"
-        android:title="@string/app_search"
-        app:actionViewClass="android.support.v7.widget.SearchView"
-        app:showAsAction="ifRoom" />
+            android:id="@+id/search"
+            android:title="@string/app_search"
+            app:actionViewClass="android.support.v7.widget.SearchView"
+            app:showAsAction="ifRoom"/>
+    <item
+            android:id="@+id/switchNightView"
+            android:title="@string/app_switch_night"
+            app:actionLayout="@layout/switch_item"
+            app:showAsAction="ifRoom">
+    </item>/>
     <item
         android:id="@+id/philosophy"
         android:icon="@drawable/philosophy"
         android:title="@string/app_philosophy"
         app:showAsAction="ifRoom" />
     <item
+            android:title="@string/app_search_site"
+            android:id="@+id/searchSite"
+    />
+    <item
+            android:title="@string/app_search_liulishe"
+          android:id="@+id/searchLiulishe"/>
+    <item
         android:id="@+id/search_clear"
         android:icon="@android:drawable/ic_menu_close_clear_cancel"
         android:title="@string/app_search_clear"
-        app:showAsAction="never" />
+        app:showAsAction="ifRoom" />
     <item
         android:id="@+id/settings"
         android:title="@string/settings_host"
         app:showAsAction="never" />
     <item
-        android:id="@+id/config"
-        android:title="@string/settings_config"
-        app:showAsAction="never" />
+            android:id="@+id/config"
+            android:title="@string/settings_config"
+    />
+    <item android:title="@string/settings_config_fade"
+          android:id="@+id/config_fade"
+    />
     <item
-        android:id="@+id/about"
-        android:title="@string/app_about"
-        app:showAsAction="never" />
+            android:id="@+id/about"
+            android:title="@string/app_about"
+    />
 </menu>

@@ -137,6 +137,11 @@ case class Article(title: String,
 
 object Article {
 
+  /*
+  * Parcelable是Android为我们提供的序列化的接口,
+  * Parcelable相对于Serializable的使用相对复杂一些,但Parcelable的效率相对Serializable也高很多,这一直是Google工程师引以为傲的
+  * (摘自https://blog.csdn.net/justin_1107/article/details/72903006)
+  * */
   val CREATOR: Parcelable.Creator[Article] = new Parcelable.Creator[Article] {
     override def createFromParcel(source: Parcel): Article = new Article(
       source.readString(),

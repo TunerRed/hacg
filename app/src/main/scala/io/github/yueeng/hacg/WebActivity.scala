@@ -1,5 +1,6 @@
 package io.github.yueeng.hacg
 
+import android.R
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.support.v4.app.Fragment
