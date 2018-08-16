@@ -45,4 +45,4 @@ __基于琉璃神社ver1.2.6__
 ## 个人杂谈
 - Scala写安卓的例子在网上是真的难找，环境都难配，到最后发现基本是安卓用java，java替换为Scala。不过异步加载的地方似乎还是挺简洁的？
 - 大佬写代码加注释啊喂
-![screenshot](https://github.com/TunerRed/hacg/blob/tunerred/screenshot.jpg?raw=true)
+<img src="https://github.com/TunerRed/hacg/blob/tunerred/screenshot.jpg?raw=true" width=216 height=384 />
