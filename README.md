@@ -14,6 +14,7 @@
 
 ***
 # 琉璃神社·改
+![HACG](https://github.com/TunerRed/hacg/blob/tunerred/app/src/main/res/mipmap-xhdpi/ic_launcher.png?raw=true)
 __基于琉璃神社ver1.2.6__
 
 ## 添加的功能与特色
