@@ -1,9 +1,11 @@
 {
   "host": [
-    "www.llss.fun",
+    "www.llss.li",
+    "www.llss.la",
+    "www.liuli.pw",
     "www.hacg.me"
   ],
-  "bbs": "/wp/bbs",
+  "bbs": "/wp",
   "category": [
     {
       "name": "最新",
@@ -19,19 +21,19 @@
     },
     {
       "name": "游戏",
-      "url": "/wp/game.html"
+      "url": "/wp/game"
     },
     {
       "name": "文章",
-      "url": "/wp/age.html"
+      "url": "/wp/age"
     },
     {
       "name": "音乐",
-      "url": "/wp/op.html"
+      "url": "/wp/op"
     },
     {
       "name": "轻小说",
-      "url": "/wp/book.html"
+      "url": "/wp/book"
     }
   ]
 }
